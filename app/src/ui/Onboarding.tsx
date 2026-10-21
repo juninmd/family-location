@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { api } from '../lib/api';
 import { haptic, kv } from '../lib/native';
 import { startRealtime } from '../lib/socket';
-import { setState, toast } from '../lib/store';
+import { setState } from '../lib/store';
+import { getServer } from '../lib/config';
 import { startTracking } from '../lib/tracker';
 import { Avatar } from './Avatar';
 import { ICheck, IEye, ILocate, IShield } from './Icons';
@@ -16,9 +17,11 @@ export function Onboarding() {
   const [emoji, setEmoji] = useState('😀');
   const [color, setColor] = useState(COLORS[0]);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
 
   async function finish() {
     setBusy(true);
+    setErr('');
     try {
       const d = await api.register({ name: name.trim() || 'Eu', emoji, color });
       const creds = { id: d.id, secret: d.secret };
@@ -29,7 +32,12 @@ export function Onboarding() {
       startRealtime(creds);
       void startTracking();
     } catch (e) {
-      toast((e as Error).message, 'err');
+      const status = (e as { status?: number }).status;
+      setErr(
+        status === 0
+          ? `Sem conexão com o servidor (${getServer()}). Verifique a internet e tente de novo.`
+          : `O servidor (${getServer()}) não respondeu como esperado${status ? ` (erro ${status})` : ''}. Ele pode estar iniciando — tente de novo em instantes.`,
+      );
       setBusy(false);
     }
   }
@@ -101,9 +109,10 @@ export function Onboarding() {
             <li><span><ICheck /></span><div><b>Só quem tem o seu código</b><small>E você pode trocá-lo a qualquer momento.</small></div></li>
             <li><span><ICheck /></span><div><b>Pausa com um toque</b><small>No perfil, em “Compartilhar minha localização”.</small></div></li>
           </ul>
+          {err && <p className="err" role="alert">{err}</p>}
           <div className="row gap">
             <button className="btn ghost" onClick={() => setStep(1)}>Voltar</button>
-            <button className="btn primary grow" onClick={finish} disabled={busy}>{busy ? 'Criando…' : 'Permitir e criar meu código'}</button>
+            <button className="btn primary grow" onClick={finish} disabled={busy}>{busy ? 'Criando…' : err ? 'Tentar de novo' : 'Permitir e criar meu código'}</button>
           </div>
         </div>
       )}
