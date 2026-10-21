@@ -1,11 +1,15 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, useState } from 'react';
 import { getState, select, useStore } from '../lib/store';
 import type { Person } from '../lib/types';
 import { circlePolygon, emptyFC } from './geo';
 import { createMeEl, createPersonEl, createPlaceEl, isStale, tween, updatePersonEl } from './markers';
 import { loadStyle } from './style';
+
+// v6 distribui o worker como arquivo separado: o Vite o empacota como asset.
+maplibregl.setWorkerUrl(workerUrl);
 
 const FRANCA: [number, number] = [-47.4009, -20.5386];
 
@@ -33,6 +37,7 @@ export function MapView({ dark }: { dark: boolean }) {
   const pins = useRef(new Map<string, PinRec>());
   const placePins = useRef<maplibregl.Marker[]>([]);
   const meMarker = useRef<maplibregl.Marker | null>(null);
+  const replayMarker = useRef<maplibregl.Marker | null>(null);
   const [attr, setAttr] = useState(false);
   const loaded = useRef(false);
   const fitted = useRef(false);
@@ -46,6 +51,7 @@ export function MapView({ dark }: { dark: boolean }) {
   const focus = useStore((s) => s.focus);
   const pick = useStore((s) => s.pickPlace);
   const tab = useStore((s) => s.tab);
+  const replay = useStore((s) => s.replay);
 
   // Criação do mapa (uma vez)
   useEffect(() => {
@@ -201,6 +207,28 @@ export function MapView({ dark }: { dark: boolean }) {
       map.jumpTo({ center: [myPos.lng, myPos.lat], zoom: 15 });
     }
   }, [myPos]);
+
+  // Reprodução do trajeto: marcador percorre o histórico carregado
+  useEffect(() => {
+    const map = mapRef;
+    if (!map) return;
+    const pt = replay ? trails[replay.code]?.[replay.idx] : null;
+    if (!replay || !pt) {
+      replayMarker.current?.remove();
+      replayMarker.current = null;
+      return;
+    }
+    const person = me?.following.find((p) => p.code === replay.code);
+    if (!replayMarker.current) {
+      const el = document.createElement('div');
+      el.className = 'replay-dot';
+      replayMarker.current = new maplibregl.Marker({ element: el }).setLngLat([pt.lng, pt.lat]).addTo(map);
+    }
+    replayMarker.current.getElement().style.setProperty('--c', person?.color ?? '#7c6cff');
+    replayMarker.current.getElement().textContent = person?.emoji ?? '📍';
+    replayMarker.current.setLngLat([pt.lng, pt.lat]);
+    if (replay.playing && !map.getBounds().contains([pt.lng, pt.lat])) map.easeTo({ center: [pt.lng, pt.lat], duration: 300 });
+  }, [replay, trails, me]);
 
   // Foco programático
   useEffect(() => {

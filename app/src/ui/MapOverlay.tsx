@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import type { Report } from '../lib/types';
 import { batteryPct, ago, clock, compass, coords, dist, dms, haversine, kmh, statusOf } from '../lib/format';
 import { copyText, haptic, platform, shareText } from '../lib/native';
-import { flyTo, select, setState, setTab, toast, useStore } from '../lib/store';
+import { flyTo, getState, select, setState, setTab, toast, useStore } from '../lib/store';
 import type { Person } from '../lib/types';
 import { mapApi } from '../map/MapView';
 import { Avatar, BatteryChip } from './Avatar';
-import { IBattery, IClock, ICompass, ICopy, IEdit, IFit, ILocate, IMountain, INav, IPlus, IRoute, IShare, ISos, ISpeed, ITarget, ITrash } from './Icons';
+import { IBattery, IClock, ICompass, ICopy, IEdit, IFit, ILocate, IMountain, INav, IPlay, IPlus, IRoute, IShare, ISos, ISpeed, ITarget, ITrash } from './Icons';
 import { Modal } from './Modal';
 
 const NONE: never[] = [];
@@ -54,12 +55,23 @@ export function MapButtons() {
 export function PeopleDock() {
   const people = useStore((s) => s.me?.following ?? NONE);
   const selected = useStore((s) => s.selected);
+  const group = useStore((s) => s.group);
   const sel = people.find((p) => p.code === selected);
   if (sel) return <PersonSheet person={sel} />;
+  const groups = [...new Set(people.map((p) => p.group).filter((g): g is string => !!g))];
+  const shown = group && groups.includes(group) ? people.filter((p) => p.group === group) : people;
   return (
     <div className="dock">
+      {groups.length > 0 && (
+        <div className="chips group-chips">
+          <button className={`chip-btn${!group ? ' on' : ''}`} onClick={() => setState({ group: null })}>Todos</button>
+          {groups.map((g) => (
+            <button key={g} className={`chip-btn${group === g ? ' on' : ''}`} onClick={() => setState({ group: g })}>{g}</button>
+          ))}
+        </div>
+      )}
       <div className="dock-scroll">
-        {people.map((p) => (
+        {shown.map((p) => (
           <PersonCard key={p.code} p={p} />
         ))}
         <button className="card add-card" onClick={() => setState({ addOpen: true })}>
@@ -86,8 +98,8 @@ function PersonCard({ p }: { p: Person }) {
         <BatteryChip level={p.pos?.battery ?? null} charging={!!p.pos?.charging} />
       </div>
       <b>{p.name}</b>
-      <small className={`st ${st.tone}`}>{st.short ?? st.label}</small>
-      {d && <small className="dim">a {d} de você</small>}
+      <small className={`st ${st.tone}`}>{p.pending ? 'Aguardando aprovação' : (st.short ?? st.label)}</small>
+      {p.expiresAt ? <small className="dim">⏳ até {new Date(p.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</small> : d && <small className="dim">a {d} de você</small>}
     </button>
   );
 }
@@ -109,6 +121,10 @@ function PersonSheet({ person: p }: { person: Person }) {
   const myPos = useStore((s) => s.myPos);
   const [address, setAddress] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [report, setReport] = useState<Report | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const trail = useStore((s) => s.trails[p.code]);
+  const replay = useStore((s) => s.replay);
   const [removing, setRemoving] = useState(false);
   const [now, setNow] = useState(Date.now());
   const st = statusOf(p, now);
@@ -130,7 +146,42 @@ function PersonSheet({ person: p }: { person: Person }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  async function toggleReport() {
+    const open = !reportOpen;
+    setReportOpen(open);
+    if (open && !report) {
+      try {
+        setReport(await api.report(p.code, 24));
+      } catch (e) {
+        toast((e as Error).message, 'err');
+      }
+    }
+  }
+
+  // Reprodução do trajeto: avança o índice e o mapa mostra a posição naquele instante.
+  useEffect(() => {
+    if (!replay?.playing || replay.code !== p.code || !trail?.length) return;
+    const step = Math.max(1, Math.round(trail.length / 150));
+    const t = setInterval(() => {
+      const r = getState().replay;
+      if (!r?.playing) return;
+      const next = r.idx + step;
+      if (next >= trail.length - 1) setState({ replay: { ...r, idx: trail.length - 1, playing: false } });
+      else setState({ replay: { ...r, idx: next } });
+    }, 120);
+    return () => clearInterval(t);
+  }, [replay?.playing, replay?.code, p.code, trail?.length]);
+
+  function toggleReplay() {
+    if (!trail || trail.length < 2) return toast('Carregue um trajeto (1 h, 6 h ou 24 h) primeiro.');
+    const r = getState().replay;
+    if (r?.code === p.code && r.playing) return setState({ replay: { ...r, playing: false } });
+    const idx = r?.code === p.code && r.idx < trail.length - 1 ? r.idx : 0;
+    setState({ replay: { code: p.code, idx, playing: true } });
+  }
+
   async function loadTrail(hours: number | null) {
+    setState({ replay: null });
     if (hours == null || hours === trailHours) return setState({ trailHours: null });
     setState({ trailHours: hours });
     try {
@@ -165,12 +216,14 @@ function PersonSheet({ person: p }: { person: Person }) {
           <h2>{p.name}</h2>
           <small className={`st ${st.tone}`}>{st.short ?? st.label}</small>
         </div>
-        <button className="icon-btn sm" onClick={() => setRenaming(true)} aria-label="Apelido"><IEdit width={17} height={17} /></button>
+        <button className="icon-btn sm" onClick={() => setRenaming(true)} aria-label="Ajustes da pessoa"><IEdit width={17} height={17} /></button>
         <button className="icon-btn sm danger-text" onClick={() => setRemoving(true)} aria-label="Remover"><ITrash width={17} height={17} /></button>
         <button className="icon-btn sm" onClick={() => select(null)} aria-label="Fechar">✕</button>
       </div>
 
-      {pos ? (
+      {p.pending ? (
+        <p className="lead sm pad">Pedido enviado. {p.realName} precisa aceitar no Perfil para você ver a localização.</p>
+      ) : pos ? (
         <>
           <div className="stats">
             {stats.map((s) => (
@@ -206,6 +259,38 @@ function PersonSheet({ person: p }: { person: Person }) {
             </div>
           </div>
 
+          {trail && trail.length > 1 && trailHours != null && (
+            <div className="replay">
+              <button className="icon-btn sm" onClick={toggleReplay} aria-label="Reproduzir trajeto">
+                {replay?.code === p.code && replay.playing ? '⏸' : <IPlay width={16} height={16} />}
+              </button>
+              <input
+                type="range" min={0} max={trail.length - 1}
+                value={replay?.code === p.code ? replay.idx : trail.length - 1}
+                onChange={(e) => setState({ replay: { code: p.code, idx: +e.target.value, playing: false } })}
+              />
+              <small>{clock(trail[Math.min(trail.length - 1, replay?.code === p.code ? replay.idx : trail.length - 1)].ts)}</small>
+            </div>
+          )}
+
+          <button className="report-toggle" onClick={toggleReport}>
+            <span>📊 Resumo das últimas 24 h</span><span>{reportOpen ? '▴' : '▾'}</span>
+          </button>
+          {reportOpen && (
+            <div className="report">
+              {!report ? <small>Calculando…</small> : report.points < 2 ? <small>Ainda sem dados suficientes.</small> : (
+                <>
+                  <div><b>{report.distanceKm.toString().replace('.', ',')} km</b><small>percorridos</small></div>
+                  <div><b>{report.maxKmh} km/h</b><small>máxima</small></div>
+                  <div><b>{report.avgKmh} km/h</b><small>média em movimento</small></div>
+                  <div><b>{report.movingMin} min</b><small>em movimento</small></div>
+                  <div><b>{report.stops}</b><small>paradas (≥5 min)</small></div>
+                  <div><b>{report.longestStopMin} min</b><small>maior parada</small></div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="actions">
             <button className="btn soft" onClick={() => openRoute(p)}><IRoute width={18} height={18} /> Rota até aqui</button>
             <button
@@ -223,7 +308,7 @@ function PersonSheet({ person: p }: { person: Person }) {
         </p>
       )}
 
-      {renaming && <Rename person={p} onClose={() => setRenaming(false)} />}
+      {renaming && <PersonSettings person={p} onClose={() => setRenaming(false)} />}
       {removing && (
         <Modal title={`Parar de acompanhar ${p.name}?`} onClose={() => setRemoving(false)}>
           <div className="modal-body">
@@ -252,29 +337,57 @@ function PersonSheet({ person: p }: { person: Person }) {
   );
 }
 
-function Rename({ person, onClose }: { person: Person; onClose: () => void }) {
-  const [v, setV] = useState(person.name);
+const LIMITS = [null, 60, 80, 100, 120] as const;
+
+function PersonSettings({ person, onClose }: { person: Person; onClose: () => void }) {
+  const people = useStore((s) => s.me?.following ?? NONE);
+  const [alias, setAlias] = useState(person.name);
+  const [group, setGroup] = useState(person.group ?? '');
+  const [limit, setLimit] = useState<number | null>(person.speedLimit ?? null);
+  const groups = [...new Set(['Família', ...people.map((x) => x.group).filter((g): g is string => !!g)])];
+
+  async function save() {
+    try {
+      const name = alias.trim();
+      if (name !== person.name) await api.rename(person.code, name === person.realName ? '' : name);
+      await api.followMeta(person.code, { group: group.trim() || null, speedLimit: limit });
+      setState((s) =>
+        s.me
+          ? { me: { ...s.me, following: s.me.following.map((x) => (x.code === person.code ? { ...x, name: name || x.realName, group: group.trim() || null, speedLimit: limit } : x)) } }
+          : {},
+      );
+      onClose();
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    }
+  }
+
   return (
-    <Modal title="Apelido" onClose={onClose}>
+    <Modal title="Ajustes" onClose={onClose}>
       <div className="modal-body">
         <label className="field">
-          <span>Como você quer chamar {person.realName}?</span>
-          <input value={v} maxLength={24} onChange={(e) => setV(e.target.value)} autoFocus />
+          <span>Apelido para {person.realName}</span>
+          <input value={alias} maxLength={24} onChange={(e) => setAlias(e.target.value)} />
         </label>
-        <button
-          className="btn primary lg"
-          onClick={async () => {
-            try {
-              await api.rename(person.code, v.trim());
-              setState((s) => (s.me ? { me: { ...s.me, following: s.me.following.map((x) => (x.code === person.code ? { ...x, name: v.trim() || x.realName } : x)) } } : {}));
-              onClose();
-            } catch (e) {
-              toast((e as Error).message, 'err');
-            }
-          }}
-        >
-          Salvar
-        </button>
+        <div className="field">
+          <span>Grupo</span>
+          <div className="chips wrap">
+            <button className={`chip-btn${!group ? ' on' : ''}`} onClick={() => setGroup('')}>Nenhum</button>
+            {groups.map((g) => (
+              <button key={g} className={`chip-btn${group === g ? ' on' : ''}`} onClick={() => setGroup(g)}>{g}</button>
+            ))}
+          </div>
+          <input value={group} maxLength={20} placeholder="Ou crie um grupo (ex.: Amigos)" onChange={(e) => setGroup(e.target.value)} />
+        </div>
+        <div className="field">
+          <span>Avisar se passar de…</span>
+          <div className="chips wrap">
+            {LIMITS.map((l) => (
+              <button key={String(l)} className={`chip-btn${limit === l ? ' on' : ''}`} onClick={() => setLimit(l)}>{l ? `${l} km/h` : 'Desligado'}</button>
+            ))}
+          </div>
+        </div>
+        <button className="btn primary lg" onClick={save}>Salvar</button>
       </div>
     </Modal>
   );

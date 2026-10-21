@@ -26,6 +26,9 @@ export interface State {
   pickPlace: PickPlace | null;
   toast: { id: number; text: string; kind: 'ok' | 'err' | 'sos' } | null;
   focus: { lat: number; lng: number; zoom?: number; n: number } | null;
+  group: string | null;
+  scanOpen: boolean;
+  replay: { code: string; idx: number; playing: boolean } | null;
 }
 
 const initial: State = {
@@ -46,6 +49,9 @@ const initial: State = {
   pickPlace: null,
   toast: null,
   focus: null,
+  group: null,
+  scanOpen: false,
+  replay: null,
 };
 
 let state = initial;
@@ -115,7 +121,7 @@ export function setTheme(theme: Theme) {
 }
 
 export function select(code: string | null) {
-  setState({ selected: code, trailHours: code ? getState().trailHours : null });
+  setState({ selected: code, trailHours: code ? getState().trailHours : null, replay: null });
   const p = getState().me?.following.find((x) => x.code === code);
   if (p?.pos) flyTo(p.pos.lat, p.pos.lng, 16);
 }

@@ -53,6 +53,36 @@ export function openDb(path) {
       ts INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS events_rec ON events(recipient_id, ts);
+    CREATE TABLE IF NOT EXISTS invites (
+      code TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS place_state (
+      place_id TEXT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+      subject_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      inside INTEGER NOT NULL,
+      PRIMARY KEY (place_id, subject_id)
+    );
+    CREATE TABLE IF NOT EXISTS push_tokens (
+      token TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
+  // Migrações aditivas (bancos criados pela v1).
+  addColumn(db, 'devices', 'approval', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'follows', 'status', "TEXT NOT NULL DEFAULT 'active'");
+  addColumn(db, 'follows', 'expires_at', 'INTEGER');
+  addColumn(db, 'follows', 'grp', 'TEXT');
+  addColumn(db, 'follows', 'speed_limit', 'REAL');
+  addColumn(db, 'follows', 'via', 'TEXT');
+  addColumn(db, 'invites', 'label', 'TEXT');
   return db;
+}
+
+function addColumn(db, table, column, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
 }

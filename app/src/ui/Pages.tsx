@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { api } from '../lib/api';
 import { getServer, setServer, defaultServer } from '../lib/config';
 import { ago, dist, haversine } from '../lib/format';
-import { copyText, haptic, kv } from '../lib/native';
+import { copyText, haptic, kv, shareText } from '../lib/native';
+import type { Invite } from '../lib/types';
 import { stopRealtime } from '../lib/socket';
 import { flyTo, select, setState, setTab, setTheme, toast, useStore, type Theme } from '../lib/store';
 import { openLocationSettings, startTracking, stopTracking } from '../lib/tracker';
@@ -11,6 +12,7 @@ import { COLORS, EMOJIS } from './Onboarding';
 import { shareInvite } from './AddPerson';
 import { IBell, ICopy, IEye, IEyeOff, IPin, IPlus, IRefresh, IShare, ITrash, IShield } from './Icons';
 import { Modal } from './Modal';
+import { QrCode, qrPayload } from './Qr';
 
 const NONE: never[] = [];
 
@@ -22,6 +24,7 @@ const dayLabel = (ts: number) => {
   if (d.toDateString() === y.toDateString()) return 'Ontem';
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'short' });
 };
+const EVENT_ICON: Record<string, string> = { sos: '🚨', arrive: '📥', leave: '📤', checkin: '✅', lowbat: '🔋', speed: '🚗', request: '🙋', approved: '✅' };
 const hhmm = (ts: number) => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 export function Activity() {
@@ -43,6 +46,7 @@ export function Activity() {
                   key={(e.id ?? e.ts) + '-' + i}
                   className={`feed-item ${e.type}`}
                   onClick={() => {
+                    if (e.type === 'request') return setTab('profile');
                     if (e.lat != null && e.lng != null) {
                       setTab('map');
                       select(e.who.code);
@@ -55,7 +59,7 @@ export function Activity() {
                     <b>{e.text}</b>
                     <small>{hhmm(e.ts)} · {ago(e.ts)}</small>
                   </div>
-                  <span className="feed-ico">{e.type === 'sos' ? '🚨' : e.type === 'arrive' ? '📥' : e.type === 'leave' ? '📤' : '✅'}</span>
+                  <span className="feed-ico">{EVENT_ICON[e.type] ?? '✅'}</span>
                 </li>
               ))}
             </ul>
@@ -129,6 +133,9 @@ export function Profile() {
   const [edit, setEdit] = useState(false);
   const [rotate, setRotate] = useState(false);
   const [wipe, setWipe] = useState(false);
+  const [qr, setQr] = useState(false);
+  const [invite, setInvite] = useState<Invite | null>(null);
+  const [inviteLabel, setInviteLabel] = useState('');
   const [server, setSrv] = useState(getServer());
   if (!me) return null;
 
@@ -138,6 +145,26 @@ export function Profile() {
       if (sharing) await startTracking();
       void haptic('light');
       toast(sharing ? 'Compartilhando sua localização' : 'Compartilhamento pausado');
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    }
+  };
+
+  const answer = async (id: string, accept: boolean) => {
+    try {
+      await api.answerRequest(id, accept);
+      setState({ me: await api.me() });
+      toast(accept ? 'Pedido aceito' : 'Pedido recusado');
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    }
+  };
+  const createInvite = async (hours: number | null) => {
+    try {
+      const inv = await api.createInvite({ ...(hours == null ? { permanent: true } : { hours }), label: inviteLabel.trim() || undefined });
+      setInvite(inv);
+      setInviteLabel('');
+      setState({ me: await api.me() });
     } catch (e) {
       toast((e as Error).message, 'err');
     }
@@ -162,9 +189,26 @@ export function Profile() {
           <div className="row gap center">
             <button className="btn glass-btn" onClick={async () => toast((await copyText(me.code)) ? 'Código copiado' : 'Falha ao copiar')}><ICopy width={18} height={18} /> Copiar</button>
             <button className="btn glass-btn" onClick={() => shareInvite(me.code, me.name)}><IShare width={18} height={18} /> Enviar</button>
+            <button className="btn glass-btn" onClick={() => setQr(true)}>QR</button>
           </div>
         </div>
       </section>
+
+      {me.requests.length > 0 && (
+        <>
+          <h4 className="group">Pedidos para acompanhar você ({me.requests.length})</h4>
+          <section className="group-card req">
+            {me.requests.map((r) => (
+              <div key={r.id} className="row-item">
+                <Avatar emoji={r.emoji} color={r.color} size={40} />
+                <div className="grow"><b>{r.name}</b><small>quer ver sua localização</small></div>
+                <button className="btn ghost sm" onClick={() => answer(r.id, false)}>Recusar</button>
+                <button className="btn primary sm" onClick={() => answer(r.id, true)}>Aceitar</button>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
 
       <section className="group-card">
         <Row
@@ -187,7 +231,7 @@ export function Profile() {
         {me.watchers.map((w) => (
           <div key={w.id} className="row-item">
             <Avatar emoji={w.emoji} color={w.color} size={38} />
-            <div className="grow"><b>{w.name}</b><small>desde {new Date(w.since).toLocaleDateString('pt-BR')}</small></div>
+            <div className="grow"><b>{w.name}</b><small>{w.expiresAt ? `até ${new Date(w.expiresAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : `desde ${new Date(w.since).toLocaleDateString('pt-BR')}`}</small></div>
             <button
               className="btn ghost sm danger-text"
               onClick={async () => {
@@ -198,6 +242,33 @@ export function Profile() {
             >
               Remover
             </button>
+          </div>
+        ))}
+      </section>
+
+      <h4 className="group">Privacidade</h4>
+      <section className="group-card">
+        <Row
+          icon={<IShield />}
+          title="Aprovar quem quer me ver"
+          sub={me.approval ? 'Novos acompanhantes precisam da sua aprovação' : 'Quem tem seu código vê você na hora'}
+          right={<Switch on={me.approval} onChange={async (approval) => setState({ me: await api.updateMe({ approval }) })} />}
+        />
+        <div className="row-item col">
+          <div><b>Códigos extras</b><small>Temporários expiram sozinhos (viagem, encontro). Permanentes valem até você revogar — e revogar também remove quem entrou por eles.</small></div>
+          <input className="mini-input" value={inviteLabel} maxLength={24} placeholder="Nome do código (opcional): Vó, Escola…" onChange={(e) => setInviteLabel(e.target.value)} />
+          <div className="seg wide">
+            {[1, 8, 24].map((h) => (
+              <button key={h} onClick={() => createInvite(h)}>{h} h</button>
+            ))}
+            <button className="perm" onClick={() => createInvite(null)}>Permanente</button>
+          </div>
+        </div>
+        {me.invites.map((i) => (
+          <div key={i.code} className="row-item">
+            <div className="grow"><b className="mono">{i.code}</b><small>{i.label ? `${i.label} · ` : ''}{i.expiresAt ? `expira ${new Date(i.expiresAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'permanente'}</small></div>
+            <button className="btn ghost sm" onClick={() => setInvite(i)}>Ver</button>
+            <button className="btn ghost sm danger-text" onClick={async () => { await api.revokeInvite(i.code).catch(() => {}); setState({ me: await api.me() }); }}>Revogar</button>
           </div>
         ))}
       </section>
@@ -241,6 +312,32 @@ export function Profile() {
         </p>
       </details>
 
+      {qr && (
+        <Modal title="Meu QR Code" onClose={() => setQr(false)}>
+          <div className="modal-body center-col">
+            <QrCode text={qrPayload(me.code)} size={240} />
+            <b className="mono big">{me.code}</b>
+            <p className="hint">Peça para a outra pessoa tocar em <b>Adicionar → Escanear QR Code</b>.</p>
+          </div>
+        </Modal>
+      )}
+      {invite && (
+        <Modal title={invite.expiresAt ? 'Código temporário' : 'Código permanente'} onClose={() => setInvite(null)}>
+          <div className="modal-body center-col">
+            <QrCode text={qrPayload(invite.code)} size={220} />
+            <b className="mono big">{invite.code}</b>
+            <p className="hint">
+              {invite.expiresAt
+                ? `Quem usar este código vê você até ${new Date(invite.expiresAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Depois o acesso termina sozinho.`
+                : 'Código permanente: vale até você revogá-lo em Perfil → Privacidade (isso também remove quem entrou por ele).'}
+            </p>
+            <div className="row gap center">
+              <button className="btn soft" onClick={async () => toast((await copyText(invite.code)) ? 'Código copiado' : 'Falha ao copiar')}><ICopy width={18} height={18} /> Copiar</button>
+              <button className="btn soft" onClick={() => shareText('Perto', `${me.name} compartilhou a localização com você no Perto${invite.expiresAt ? ' por tempo limitado' : ''}. Código: ${invite.code}`)}><IShare width={18} height={18} /> Enviar</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {edit && <EditProfile onClose={() => setEdit(false)} />}
       {rotate && (
         <Modal title="Trocar meu código?" onClose={() => setRotate(false)} tone="danger">

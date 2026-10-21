@@ -3,6 +3,8 @@ import { api } from '../lib/api';
 import { copyText, haptic, shareText } from '../lib/native';
 import { select, setState, toast, upsertPerson, useStore } from '../lib/store';
 import { ICopy, IShare } from './Icons';
+import { Nearby } from './Nearby';
+import { QrCode, qrPayload, Scanner } from './Qr';
 import { Modal } from './Modal';
 
 const ALPHA = /[^23456789ABCDEFGHJKMNPQRSTUVWXYZ]/g;
@@ -21,6 +23,9 @@ export function AddPerson() {
   const [alias, setAlias] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [scan, setScan] = useState(false);
+  const [mode, setMode] = useState<'code' | 'wifi'>('code');
+  const [showQr, setShowQr] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const close = () => setState({ addOpen: false });
   const ready = code.replace('-', '').length === 8;
@@ -33,7 +38,7 @@ export function AddPerson() {
       const p = await api.follow(code, alias.trim() || undefined);
       upsertPerson(p);
       void haptic('success');
-      toast(`${p.name} adicionado(a)!`);
+      toast(p.pending ? `Pedido enviado a ${p.name}. Aguarde a aprovação.` : `${p.name} adicionado(a)!`);
       close();
       select(p.code);
     } catch (e) {
@@ -49,7 +54,12 @@ export function AddPerson() {
 
   return (
     <Modal title="Adicionar pessoa" onClose={close}>
-      <div className="modal-body">
+      <div className="seg wide tabs">
+        <button className={mode === 'code' ? 'on' : ''} onClick={() => setMode('code')}>🔢 Código</button>
+        <button className={mode === 'wifi' ? 'on' : ''} onClick={() => setMode('wifi')}>📡 Wi‑Fi próximo</button>
+      </div>
+      {mode === 'wifi' && <Nearby onDone={close} />}
+      <div className="modal-body" hidden={mode !== 'code'}>
         <label className="field">
           <span>Código de quem você quer acompanhar</span>
           <input
@@ -72,6 +82,7 @@ export function AddPerson() {
         </label>
         {err && <p className="err">{err}</p>}
         <button className="btn primary lg" onClick={submit} disabled={!ready || busy}>{busy ? 'Procurando…' : 'Acompanhar no mapa'}</button>
+        <button className="btn soft" onClick={() => setScan(true)}>📷 Escanear QR Code</button>
 
         <div className="divider"><span>ou deixe que vejam você</span></div>
         <div className="mycode">
@@ -80,10 +91,22 @@ export function AddPerson() {
           <div className="row gap center">
             <button className="btn soft" onClick={async () => me && toast((await copyText(me.code)) ? 'Código copiado' : 'Não foi possível copiar', 'ok')}><ICopy width={18} height={18} /> Copiar</button>
             <button className="btn soft" onClick={() => me && shareInvite(me.code, me.name)}><IShare width={18} height={18} /> Enviar</button>
+            <button className="btn soft" onClick={() => setShowQr((v) => !v)}>QR</button>
           </div>
+          {showQr && me && <div className="qr-wrap"><QrCode text={qrPayload(me.code)} size={190} /></div>}
         </div>
         <p className="hint">Quem digitar o seu código passa a ver sua localização. Você vê e remove essas pessoas em Perfil → Quem me vê.</p>
       </div>
+      {scan && (
+        <Scanner
+          onClose={() => setScan(false)}
+          onCode={(c) => {
+            setScan(false);
+            setCode(c);
+            setErr('');
+          }}
+        />
+      )}
     </Modal>
   );
 }

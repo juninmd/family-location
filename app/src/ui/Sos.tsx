@@ -4,6 +4,8 @@ import { haptic } from '../lib/native';
 import { getState, setState, toast, useStore } from '../lib/store';
 import { Modal } from './Modal';
 
+const QUICK = ['Cheguei 🏠', 'Estou a caminho 🚗', 'Chego atrasado ⏰', 'Preciso de carona 🙏', 'Pode ligar? 📞'];
+
 export function SosModal() {
   const watchers = useStore((s) => s.me?.watchers.length ?? 0);
   const [busy, setBusy] = useState(false);
@@ -25,12 +27,12 @@ export function SosModal() {
       setBusy(false);
     }
   }
-  async function checkin() {
+  async function checkin(message = 'Estou bem ✅') {
     setBusy(true);
     try {
-      await api.checkin({ ...here(), message: 'Estou bem ✅' });
+      const r = await api.checkin({ ...here(), message });
       void haptic('success');
-      toast('Família avisada: você está bem ✅');
+      toast(r.notified ? `Avisado: “${message}”` : 'Ninguém acompanha você ainda.', r.notified ? 'ok' : 'err');
       close();
     } catch (e) {
       toast((e as Error).message, 'err');
@@ -39,7 +41,7 @@ export function SosModal() {
   }
 
   return (
-    <Modal title="Precisa de ajuda?" onClose={close} tone="danger">
+    <Modal title="Precisa de ajuda ou quer avisar?" onClose={close} tone="danger">
       <div className="modal-body">
         <p className="lead sm">
           {watchers
@@ -47,7 +49,12 @@ export function SosModal() {
             : 'Ninguém acompanha você ainda. Em emergência, ligue 190 (Polícia), 192 (SAMU) ou 193 (Bombeiros).'}
         </p>
         <button className="btn danger lg pulse" onClick={sos} disabled={busy}>🚨 Enviar alerta SOS</button>
-        <button className="btn soft lg" onClick={checkin} disabled={busy}>✅ Só avisar que estou bem</button>
+        <button className="btn soft lg" onClick={() => checkin()} disabled={busy}>✅ Só avisar que estou bem</button>
+        <div className="chips wrap">
+          {QUICK.map((q) => (
+            <button key={q} className="chip-btn" disabled={busy} onClick={() => checkin(q)}>{q}</button>
+          ))}
+        </div>
         <button className="btn ghost" onClick={close}>Cancelar</button>
       </div>
     </Modal>

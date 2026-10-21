@@ -47,3 +47,29 @@ export function rateLimiter(max, windowMs) {
     return h.n <= max;
   };
 }
+
+/** Expande IPv6 para 8 hextetos (aceita "::" e IPv4 embutido). */
+function expandV6(ip) {
+  let s = ip.replace(/^\[|\]$/g, '').split('%')[0];
+  const v4 = s.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) {
+    const p = v4[1].split('.').map(Number);
+    s = s.replace(v4[1], `${((p[0] << 8) | p[1]).toString(16)}:${((p[2] << 8) | p[3]).toString(16)}`);
+  }
+  const [head, tail] = s.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail !== undefined ? (tail ? tail.split(':') : []) : [];
+  const fill = tail !== undefined ? Array(Math.max(0, 8 - h.length - t.length)).fill('0') : [];
+  return [...h, ...fill, ...t].map((x) => x.padStart(4, '0'));
+}
+
+/**
+ * Chave de "mesma rede" a partir do IP público visto pelo servidor:
+ * IPv4 → o próprio endereço; IPv6 → prefixo /64 (cada aparelho tem um sufixo diferente).
+ */
+export function networkKey(ip) {
+  const raw = String(ip ?? '').trim().replace(/^::ffff:/i, '');
+  if (!raw) return null;
+  if (raw.includes(':')) return `v6:${expandV6(raw).slice(0, 4).join(':')}`;
+  return `v4:${raw}`;
+}

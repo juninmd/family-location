@@ -3,6 +3,8 @@ import { wsUrl } from './config';
 import { askNotifications, haptic, notify } from './native';
 import { applyPos, getState, pushEvent, setMe, setState, toast, upsertPerson } from './store';
 import type { AppEvent, Creds, Me } from './types';
+import { flushQueue } from './tracker';
+import { initPush } from './push';
 
 let ws: WebSocket | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -37,7 +39,7 @@ export function startRealtime(creds: Creds) {
   void refreshMe();
   void refreshEvents();
   connect();
-  void askNotifications();
+  void askNotifications().then(() => initPush());
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('online', onVisible);
   clearInterval(pinger);
@@ -88,12 +90,16 @@ function connect() {
         attempts = 0;
         setState({ conn: 'online' });
         setMe(m.me as Me);
+        void flushQueue();
         break;
       case 'pos':
         applyPos(m.code as string, m.pos as never);
         break;
       case 'person':
         upsertPerson(m.person as never);
+        break;
+      case 'nearby':
+        window.dispatchEvent(new Event('perto:nearby'));
         break;
       case 'watchers':
       case 'refresh':
@@ -105,6 +111,7 @@ function connect() {
         toast(e.text, e.type === 'sos' ? 'sos' : 'ok');
         void haptic(e.type === 'sos' ? 'warning' : 'light');
         void notify(e.type === 'sos' ? '🚨 SOS — Perto' : 'Perto', e.text);
+        if (e.type === 'request' || e.type === 'approved') void refreshMe();
         break;
       }
     }

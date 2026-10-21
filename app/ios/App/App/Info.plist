@@ -51,6 +51,8 @@
 	<string>O Perto compartilha sua localização com a família mesmo com a tela bloqueada ou o app em segundo plano. Você pode pausar quando quiser no Perfil.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>O Perto compartilha sua localização com a família mesmo com a tela bloqueada. Você pode pausar quando quiser.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera é usada só para ler o QR Code de pareamento de outra pessoa.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

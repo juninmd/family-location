@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_FIREBASE: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,6 +27,11 @@ jobs:
         with: { distribution: temurin, java-version: 21 }
       - name: Aceitar licenças do Android SDK (já vem na imagem)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Firebase (push com o app fechado) — opcional
+        if: env.HAS_FIREBASE == 'true'
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/android/app/google-services.json
+          echo "VITE_PUSH_ENABLED=true" >> "$GITHUB_ENV"
       - name: Build web + sync
         working-directory: app
         run: npm ci && npm run build && npx cap sync android

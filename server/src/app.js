@@ -5,10 +5,10 @@ import { WebSocketServer } from 'ws';
 import { HttpError } from './service.js';
 import { reverseGeocode } from './geocode.js';
 import { validLat, validLng } from './geo.js';
-import { rateLimiter } from './util.js';
+import { networkKey, rateLimiter } from './util.js';
 
 const MIME = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.apk': 'application/vnd.android.package-archive',
 };
@@ -42,6 +42,7 @@ export function createApp({ service, hub, publicDir }) {
   const registerLimit = rateLimiter(20, 3600e3);
   const lookupLimit = rateLimiter(30, 600e3);
   const geoLimit = rateLimiter(120, 600e3);
+  const discoverLimit = rateLimiter(20, 600e3);
 
   const send = (res, status, body) => {
     const data = body === undefined ? '' : JSON.stringify(body);
@@ -49,13 +50,13 @@ export function createApp({ service, hub, publicDir }) {
     res.end(data);
   };
 
-  const readBody = (req) =>
+  const readBody = (req, limit = 64 * 1024) =>
     new Promise((resolve, reject) => {
       let size = 0;
       const chunks = [];
       req.on('data', (c) => {
         size += c.length;
-        if (size > 64 * 1024) {
+        if (size > limit) {
           reject(new HttpError(413, 'Corpo muito grande'));
           req.destroy();
         } else chunks.push(c);
@@ -99,12 +100,37 @@ export function createApp({ service, hub, publicDir }) {
     const follow = path.match(/^\/api\/follow\/([^/]+)$/);
     if (follow && method === 'DELETE') return service.unfollow(device, decodeURIComponent(follow[1])), send(res, 204);
     if (follow && method === 'PATCH') {
-      service.setAlias(device, decodeURIComponent(follow[1]), (await readBody(req)).alias);
+      service.setFollowMeta(device, decodeURIComponent(follow[1]), await readBody(req));
       return send(res, 204);
     }
     const watcher = path.match(/^\/api\/watchers\/([^/]+)$/);
     if (watcher && method === 'DELETE') return service.removeWatcher(device, decodeURIComponent(watcher[1])), send(res, 204);
 
+    if (path === '/api/location/batch' && method === 'POST')
+      return send(res, 200, service.ingestBatch(device, (await readBody(req, 256 * 1024)).points));
+    if (path === '/api/me/invite' && method === 'POST') {
+      const b = await readBody(req);
+      return send(res, 201, service.createInvite(device, b.permanent ? null : b.hours, b.label));
+    }
+    if (path === '/api/discover' && method === 'GET')
+      return send(res, 200, service.discover(device, networkKey(ip), url.searchParams.get('visible') !== '0'));
+    if (path === '/api/discover' && method === 'DELETE') return service.stopDiscovering(device), send(res, 204);
+    if (path === '/api/discover/request' && method === 'POST') {
+      if (!discoverLimit(device.id)) throw new HttpError(429, 'Muitos pedidos. Aguarde alguns minutos.');
+      return send(res, 200, service.requestViaDiscovery(device, networkKey(ip), (await readBody(req)).ref));
+    }
+    const invite = path.match(/^\/api\/me\/invite\/([^/]+)$/);
+    if (invite && method === 'DELETE') return service.revokeInvite(device, decodeURIComponent(invite[1])), send(res, 204);
+    const request = path.match(/^\/api\/requests\/([^/]+)$/);
+    if (request && method === 'POST') {
+      service.answerRequest(device, decodeURIComponent(request[1]), (await readBody(req)).accept === true);
+      return send(res, 204);
+    }
+    if (path === '/api/push/register' && method === 'POST') return service.registerPush(device, await readBody(req)), send(res, 204);
+    if (path === '/api/push/unregister' && method === 'POST') return service.unregisterPush((await readBody(req)).token), send(res, 204);
+    const report = path.match(/^\/api\/report\/([^/]+)$/);
+    if (report && method === 'GET')
+      return send(res, 200, service.report(device, decodeURIComponent(report[1]), url.searchParams.get('hours')));
     if (path === '/api/location' && method === 'POST') return send(res, 200, service.ingest(device, await readBody(req)));
     const hist = path.match(/^\/api\/history\/([^/]+)$/);
     if (hist && method === 'GET')
@@ -123,7 +149,7 @@ export function createApp({ service, hub, publicDir }) {
     }
     if (path === '/api/events' && method === 'GET') return send(res, 200, service.events(device, url.searchParams.get('limit')));
     if (path === '/api/sos' && method === 'POST') return send(res, 200, service.sos(device, await readBody(req)));
-    if (path === '/api/checkin' && method === 'POST') return service.checkin(device, await readBody(req)), send(res, 204);
+    if (path === '/api/checkin' && method === 'POST') return send(res, 200, service.checkin(device, await readBody(req)));
 
     throw new HttpError(404, 'Rota não encontrada.');
   }
@@ -182,7 +208,6 @@ export function createApp({ service, hub, publicDir }) {
         if (!device) return ws.close(4401, 'unauthorized');
         clearTimeout(authTimer);
         hub.add(device.id, ws);
-        service.q.touch.run(Date.now(), device.id);
         ws.send(JSON.stringify({ t: 'ready', me: service.me(device) }));
         service.broadcastPerson(device.id);
         return;

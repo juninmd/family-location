@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { IClose } from './Icons';
 
 export function Modal({ title, onClose, children, tone }: { title?: string; onClose: () => void; children: ReactNode; tone?: 'danger' }) {
@@ -7,7 +8,7 @@ export function Modal({ title, onClose, children, tone }: { title?: string; onCl
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="modal-back" onClick={onClose}>
       <div className={`modal ${tone ?? ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal>
         <div className="grab" />
@@ -19,6 +20,7 @@ export function Modal({ title, onClose, children, tone }: { title?: string; onCl
         )}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
