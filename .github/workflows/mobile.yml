@@ -1,0 +1,90 @@
+name: Apps (APK Android + IPA iOS)
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/mobile.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VERSION_CODE: ${{ github.run_number }}
+  VERSION_NAME: 1.0.${{ github.run_number }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+      - name: Build web + sync
+        working-directory: app
+        run: npm ci && npm run build && npx cap sync android
+      - name: Assinatura própria (opcional)
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+      - name: Gradle assembleRelease
+        working-directory: app/android
+        run: ./gradlew --no-daemon assembleRelease
+      - run: cp app/android/app/build/outputs/apk/release/app-release.apk Perto.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: Perto-apk, path: Perto.apk }
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - name: Build web + sync (pod install)
+        working-directory: app
+        run: npm ci && npm run build && npx cap sync ios
+      - name: xcodebuild (sem assinatura)
+        working-directory: app/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$VERSION_CODE" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Empacotar .ipa
+        run: |
+          mkdir Payload
+          cp -R app/ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry Perto-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with: { name: Perto-ipa, path: Perto-unsigned.ipa }
+
+  release:
+    needs: [android, ios]
+    if: always() && (needs.android.result == 'success' || needs.ios.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Perto — build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          fail_on_unmatched_files: false
+          files: |
+            dist/Perto.apk
+            dist/Perto-unsigned.ipa
+          body: |
+            **Android:** baixe `Perto.apk`, abra no celular e permita "instalar apps desconhecidos".
+            **iOS:** `Perto-unsigned.ipa` não é assinado — instale com AltStore / Sideloadly / TrollStore, ou use o PWA (Safari → Compartilhar → Adicionar à Tela de Início).
+            Commit: ${{ github.sha }}

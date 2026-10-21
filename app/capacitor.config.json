@@ -1,0 +1,28 @@
+{
+  "appId": "br.com.juninmd.perto",
+  "appName": "Perto",
+  "webDir": "dist",
+  "backgroundColor": "#0b1020",
+  "android": {
+    "useLegacyBridge": true,
+    "allowMixedContent": false,
+    "adjustMarginsForEdgeToEdge": "force"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0b1020"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "backgroundColor": "#0b1020"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_perto",
+      "iconColor": "#6d5efc"
+    }
+  }
+}

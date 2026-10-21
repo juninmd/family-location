@@ -1,0 +1,36 @@
+{
+  "name": "family-location-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "sync": "cap sync"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/clipboard": "^7.0.4",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/device": "^7.0.5",
+    "@capacitor/haptics": "^7.0.5",
+    "@capacitor/ios": "^7.6.9",
+    "@capacitor/local-notifications": "^7.0.7",
+    "@capacitor/share": "^7.0.4",
+    "@capacitor/splash-screen": "^7.0.5",
+    "maplibre-gl": "^4.7.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.6.9",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.5"
+  }
+}
