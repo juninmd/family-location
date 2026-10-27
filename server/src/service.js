@@ -209,7 +209,10 @@ export class Service {
 
   deleteAccount(d) {
     const watchers = this.followerIdsAll(d.id);
+    const placeIds = new Set(this.q.places.all(d.id).map((pl) => pl.id));
     this.q.deleteDevice.run(d.id);
+    for (const k of this.inside.keys()) if (placeIds.has(k.split(':')[0]) || k.endsWith(`:${d.id}`)) this.inside.delete(k);
+    for (const k of this.speedCooldown.keys()) if (k.startsWith(`${d.id}:`) || k.endsWith(`:${d.id}`)) this.speedCooldown.delete(k);
     this.latest.delete(d.id);
     this.lowBattery.delete(d.id);
     this.discoverable.delete(d.id);
