@@ -38,6 +38,15 @@ export class Hub {
   }
 }
 
+// Malformed %-escapes would otherwise surface as a 500 (URIError) and noisy logs.
+function decodeSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new HttpError(400, 'URL inválida.');
+  }
+}
+
 export function createApp({ service, hub, publicDir }) {
   const registerLimit = rateLimiter(20, 3600e3);
   const lookupLimit = rateLimiter(30, 600e3);
@@ -100,13 +109,13 @@ export function createApp({ service, hub, publicDir }) {
       return send(res, 201, service.follow(device, body.code, body.alias));
     }
     const follow = path.match(/^\/api\/follow\/([^/]+)$/);
-    if (follow && method === 'DELETE') return service.unfollow(device, decodeURIComponent(follow[1])), send(res, 204);
+    if (follow && method === 'DELETE') return service.unfollow(device, decodeSegment(follow[1])), send(res, 204);
     if (follow && method === 'PATCH') {
-      service.setFollowMeta(device, decodeURIComponent(follow[1]), await readBody(req));
+      service.setFollowMeta(device, decodeSegment(follow[1]), await readBody(req));
       return send(res, 204);
     }
     const watcher = path.match(/^\/api\/watchers\/([^/]+)$/);
-    if (watcher && method === 'DELETE') return service.removeWatcher(device, decodeURIComponent(watcher[1])), send(res, 204);
+    if (watcher && method === 'DELETE') return service.removeWatcher(device, decodeSegment(watcher[1])), send(res, 204);
 
     if (path === '/api/location/batch' && method === 'POST')
       return send(res, 200, service.ingestBatch(device, (await readBody(req, 256 * 1024)).points));
@@ -122,21 +131,21 @@ export function createApp({ service, hub, publicDir }) {
       return send(res, 200, service.requestViaDiscovery(device, networkKey(ip), (await readBody(req)).ref));
     }
     const invite = path.match(/^\/api\/me\/invite\/([^/]+)$/);
-    if (invite && method === 'DELETE') return service.revokeInvite(device, decodeURIComponent(invite[1])), send(res, 204);
+    if (invite && method === 'DELETE') return service.revokeInvite(device, decodeSegment(invite[1])), send(res, 204);
     const request = path.match(/^\/api\/requests\/([^/]+)$/);
     if (request && method === 'POST') {
-      service.answerRequest(device, decodeURIComponent(request[1]), (await readBody(req)).accept === true);
+      service.answerRequest(device, decodeSegment(request[1]), (await readBody(req)).accept === true);
       return send(res, 204);
     }
     if (path === '/api/push/register' && method === 'POST') return service.registerPush(device, await readBody(req)), send(res, 204);
     if (path === '/api/push/unregister' && method === 'POST') return service.unregisterPush((await readBody(req)).token), send(res, 204);
     const report = path.match(/^\/api\/report\/([^/]+)$/);
     if (report && method === 'GET')
-      return send(res, 200, service.report(device, decodeURIComponent(report[1]), url.searchParams.get('hours')));
+      return send(res, 200, service.report(device, decodeSegment(report[1]), url.searchParams.get('hours')));
     if (path === '/api/location' && method === 'POST') return send(res, 200, service.ingest(device, await readBody(req)));
     const hist = path.match(/^\/api\/history\/([^/]+)$/);
     if (hist && method === 'GET')
-      return send(res, 200, service.history(device, decodeURIComponent(hist[1]), url.searchParams.get('hours')));
+      return send(res, 200, service.history(device, decodeSegment(hist[1]), url.searchParams.get('hours')));
 
     if (path === '/api/places' && method === 'POST') return send(res, 201, service.addPlace(device, await readBody(req)));
     const place = path.match(/^\/api\/places\/([^/]+)$/);
@@ -161,7 +170,7 @@ export function createApp({ service, hub, publicDir }) {
       res.writeHead(404, { 'content-type': 'text/plain' });
       return res.end('Family Location API');
     }
-    const rel = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '');
+    const rel = normalize(decodeSegment(url.pathname)).replace(/^([/\\])+/, '');
     let file = join(publicDir, rel);
     if (!file.startsWith(publicDir + sep) && file !== publicDir) file = join(publicDir, 'index.html');
     if (!existsSync(file) || statSync(file).isDirectory()) file = join(publicDir, 'index.html');

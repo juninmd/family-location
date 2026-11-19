@@ -154,3 +154,11 @@ test('mensagem WebSocket "null" não derruba o servidor', async () => {
     t.close();
   }
 });
+
+test('URL com %-escape malformado responde 400, não 500', async () => {
+  const t = await boot();
+  const a = await t.reg('Junin');
+  const res = await t.call(a, 'DELETE', '/api/follow/%E0%A4%A');
+  assert.equal(res.status, 400);
+  t.close();
+});
