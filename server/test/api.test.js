@@ -121,6 +121,40 @@ test('lugares: chegada e saída geram eventos; SOS notifica', async () => {
   t.close();
 });
 
+test('corpo JSON "null" vira 400 em vez de erro interno', async () => {
+  const t = await boot();
+  const a = await t.reg('Junin');
+  const base = `http://127.0.0.1:${t.server.address().port}`;
+  const raw = (path, headers = {}) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: 'null' });
+  assert.equal((await raw('/api/register')).status, 400);
+  assert.equal((await raw('/api/location', { 'x-device-id': a.id, 'x-device-secret': a.secret })).status, 400);
+  assert.equal((await raw('/api/follow', { 'x-device-id': a.id, 'x-device-secret': a.secret })).status, 400);
+  t.close();
+});
+
+test('mensagem WebSocket "null" não derruba o servidor', async () => {
+  const t = await boot();
+  const a = await t.reg('Junin');
+  const crashes = [];
+  const onCrash = (e) => crashes.push(e);
+  process.on('uncaughtException', onCrash);
+  try {
+    const s = new WebSocket(`ws://127.0.0.1:${t.server.address().port}/ws`);
+    await new Promise((r) => s.on('open', r));
+    s.send('null'); // antes da autenticação
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(crashes.map((e) => e.message), []);
+    s.send(JSON.stringify({ id: a.id, secret: a.secret }));
+    s.send('null'); // depois da autenticação
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(crashes.map((e) => e.message), []);
+    s.close();
+  } finally {
+    process.off('uncaughtException', onCrash);
+    t.close();
+  }
+});
+
 test('URL com %-escape malformado responde 400, não 500', async () => {
   const t = await boot();
   const a = await t.reg('Junin');

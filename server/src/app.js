@@ -73,7 +73,9 @@ export function createApp({ service, hub, publicDir }) {
       req.on('end', () => {
         if (!chunks.length) return resolve({});
         try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (body === null || typeof body !== 'object') throw new Error('not an object');
+          resolve(body);
         } catch {
           reject(new HttpError(400, 'JSON inválido'));
         }
@@ -212,6 +214,7 @@ export function createApp({ service, hub, publicDir }) {
       } catch {
         return;
       }
+      if (m === null || typeof m !== 'object') return;
       if (!device) {
         device = service.authenticate(m.id, m.secret);
         if (!device) return ws.close(4401, 'unauthorized');
