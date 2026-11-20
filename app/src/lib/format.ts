@@ -32,10 +32,11 @@ export function coords(p: Pos, digits = 5) {
 }
 
 export function dms(v: number, pos: string, neg: string) {
-  const a = Math.abs(v);
-  const d = Math.floor(a);
-  const m = Math.floor((a - d) * 60);
-  const s = ((a - d) * 60 - m) * 60;
+  // Round once to tenths of an arc-second so 59.96″ carries into the minute instead of printing 60.0″.
+  const t = Math.round(Math.abs(v) * 36000);
+  const d = Math.floor(t / 36000);
+  const m = Math.floor((t % 36000) / 600);
+  const s = (t % 600) / 10;
   return `${d}°${String(m).padStart(2, '0')}′${s.toFixed(1).padStart(4, '0')}″ ${v >= 0 ? pos : neg}`;
 }
 
