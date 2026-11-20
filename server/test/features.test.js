@@ -278,3 +278,21 @@ test('push: 400 de payload não apaga token; só token inválido/404 e falha de 
   const invalid = await push.notify(['ok', 'payload', 'stale', 'net', 'gone'].map((token) => ({ token })), { title: 'T', body: 'B' });
   assert.deepEqual(invalid.sort(), ['gone', 'stale']);
 });
+
+test('histórico longo: o limite corta os pontos mais antigos, não os mais recentes', () => {
+  const { svc, reg } = setup();
+  const a = reg('Junin');
+  const b = reg('Maria');
+  svc.follow(a, b.code);
+  const now = Date.now();
+  const insert = svc.db.prepare('INSERT INTO positions (device_id, ts, lat, lng, acc, speed, heading, alt, battery, charging) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  svc.db.exec('BEGIN');
+  // 6000 pontos a cada 8 s (~13 h): mais que o teto de 5000 da consulta
+  for (let i = 6000; i >= 1; i--) insert.run(b.id, now - i * 8000, -20.5 + i * 1e-5, -47.4, 5, 5, 0, 0, 0.9, 0);
+  svc.db.exec('COMMIT');
+
+  const hist = svc.history(a, b.code, 24);
+  assert.equal(hist.length, 5000);
+  assert.equal(hist.at(-1).ts, now - 8000, 'o ponto mais recente precisa estar no rastro');
+  assert.ok(hist[0].ts < hist.at(-1).ts, 'continua em ordem cronológica');
+});

@@ -90,8 +90,10 @@ export class Service {
       insertPos: db.prepare(
         'INSERT INTO positions (device_id, ts, lat, lng, acc, speed, heading, alt, battery, charging) VALUES (?,?,?,?,?,?,?,?,?,?)',
       ),
+      // Newest 5000 in chronological order: an ASC LIMIT would drop the most recent part of the trail.
       history: db.prepare(
-        'SELECT ts, lat, lng, acc, speed FROM positions WHERE device_id = ? AND ts >= ? ORDER BY ts ASC LIMIT 5000',
+        `SELECT * FROM (SELECT ts, lat, lng, acc, speed FROM positions WHERE device_id = ? AND ts >= ? ORDER BY ts DESC LIMIT 5000)
+         ORDER BY ts ASC`,
       ),
       prune: db.prepare('DELETE FROM positions WHERE ts < ?'),
       pruneEvents: db.prepare('DELETE FROM events WHERE ts < ?'),
