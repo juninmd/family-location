@@ -5,6 +5,17 @@ const noPush = { configured: false, notify: async () => [] };
 const b64url = (b) => Buffer.from(b).toString('base64url');
 
 /**
+ * FCM answers 404/UNREGISTERED for a token that no longer exists. A bare 400 is also used for
+ * payload mistakes, so it only counts when the error names the registration token.
+ */
+async function isDeadToken(res) {
+  if (res.status === 404) return true;
+  if (res.status !== 400) return false;
+  const err = (await res.json?.().catch(() => null))?.error;
+  return /registration token/i.test(err?.message ?? '') || (err?.details ?? []).some((d) => d.errorCode === 'UNREGISTERED');
+}
+
+/**
  * Notificações push via Firebase Cloud Messaging (HTTP v1). Ativa quando há uma
  * conta de serviço em FCM_SERVICE_ACCOUNT_JSON (JSON ou base64) ou FCM_SERVICE_ACCOUNT_FILE.
  * Sem configuração, vira no-op e o app segue funcionando só com WebSocket.
@@ -53,24 +64,25 @@ export function createPush({ env = process.env, fetchImpl = fetch } = {}) {
     async notify(tokens, { title, body, data = {}, urgent = false }) {
       const bearer = await accessToken();
       const invalid = [];
-      await Promise.all(
-        tokens.map(async ({ token }) => {
-          const res = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
-            method: 'POST',
-            headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
-            body: JSON.stringify({
-              message: {
-                token,
-                notification: { title, body },
-                data,
-                android: { priority: urgent ? 'HIGH' : 'NORMAL', notification: { channel_id: urgent ? 'sos' : 'family' } },
-                apns: { headers: { 'apns-priority': urgent ? '10' : '5' }, payload: { aps: { sound: 'default' } } },
-              },
-            }),
-          });
-          if (res.status === 404 || res.status === 400) invalid.push(token);
-        }),
-      );
+      const send = async ({ token }) => {
+        const res = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            message: {
+              token,
+              notification: { title, body },
+              data,
+              android: { priority: urgent ? 'HIGH' : 'NORMAL', notification: { channel_id: urgent ? 'sos' : 'family' } },
+              apns: { headers: { 'apns-priority': urgent ? '10' : '5' }, payload: { aps: { sound: 'default' } } },
+            },
+          }),
+        });
+        if (await isDeadToken(res)) invalid.push(token);
+      };
+      // allSettled: one unreachable send must not discard the verdicts of the other tokens
+      const results = await Promise.allSettled(tokens.map(send));
+      for (const r of results) if (r.status === 'rejected') console.error('push: falha ao enviar:', r.reason?.message);
       return invalid;
     },
   };
