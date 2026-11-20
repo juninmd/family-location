@@ -8,6 +8,8 @@ export class ApiError extends Error {
 }
 
 let creds: Creds | null = null;
+// Mobile data can leave a request hanging forever: SOS must fail fast enough to retry or call 190.
+export const REQUEST_TIMEOUT_MS = 15_000;
 export const setCreds = (c: Creds | null) => (creds = c);
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -20,9 +22,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
         ...(creds && { 'x-device-id': creds.id, 'x-device-secret': creds.secret }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
-    throw new ApiError(0, 'Sem conexão com o servidor.');
+  } catch (e) {
+    const timedOut = e instanceof DOMException && e.name === 'TimeoutError';
+    throw new ApiError(0, timedOut ? 'O servidor não respondeu a tempo. Tente de novo.' : 'Sem conexão com o servidor.');
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
