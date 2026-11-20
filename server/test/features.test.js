@@ -261,3 +261,20 @@ test('networkKey agrupa IPv4 e usa o prefixo /64 no IPv6', () => {
   assert.notEqual(networkKey('2804:14d:5c81:1::10'), networkKey('2804:14d:5c81:2::10'));
   assert.equal(networkKey(''), null);
 });
+
+test('push: 400 de payload não apaga token; só token inválido/404 e falha de rede não perde os demais', async () => {
+  const sa = { private_key: generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } }).privateKey, client_email: 'a@b.c', project_id: 'p' };
+  const errBody = (message) => ({ ok: false, status: 400, json: async () => ({ error: { status: 'INVALID_ARGUMENT', message } }) });
+  const fetchImpl = async (url, init) => {
+    if (url.includes('oauth2')) return { ok: true, json: async () => ({ access_token: 'AT', expires_in: 3600 }) };
+    const t = JSON.parse(init.body).message.token;
+    if (t === 'payload') return errBody('Invalid value at message.data');
+    if (t === 'stale') return errBody('The registration token is not a valid FCM registration token');
+    if (t === 'net') throw new Error('socket hang up');
+    if (t === 'gone') return { ok: false, status: 404 };
+    return { ok: true, status: 200 };
+  };
+  const push = createPush({ env: { FCM_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }, fetchImpl });
+  const invalid = await push.notify(['ok', 'payload', 'stale', 'net', 'gone'].map((token) => ({ token })), { title: 'T', body: 'B' });
+  assert.deepEqual(invalid.sort(), ['gone', 'stale']);
+});
