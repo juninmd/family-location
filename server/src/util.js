@@ -35,17 +35,20 @@ export const cleanColor = (v, fallback = '#6366f1') => (/^#[0-9a-fA-F]{6}$/.test
 /** Limitador simples por chave (token bucket em janela fixa). */
 export function rateLimiter(max, windowMs) {
   const hits = new Map();
-  return (key) => {
+  const check = (key) => {
     const now = Date.now();
     const h = hits.get(key);
     if (!h || now - h.start > windowMs) {
+      // Poda no caminho de chave nova: é ele que cresce quando cada IP aparece uma vez só.
+      if (hits.size > 5000) for (const [k, v] of hits) if (now - v.start > windowMs) hits.delete(k);
       hits.set(key, { start: now, n: 1 });
       return true;
     }
     h.n++;
-    if (hits.size > 5000) for (const [k, v] of hits) if (now - v.start > windowMs) hits.delete(k);
     return h.n <= max;
   };
+  check.size = () => hits.size;
+  return check;
 }
 
 /** Expande IPv6 para 8 hextetos (aceita "::" e IPv4 embutido). */
