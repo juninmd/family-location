@@ -15,14 +15,13 @@ export function reverseGeocode(lat, lng, fetchImpl = fetch) {
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=pt-BR&lat=${lat}&lon=${lng}`;
       const res = await fetchImpl(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(6000) });
-      if (res.ok) {
-        const j = await res.json();
-        const a = j.address ?? {};
-        const street = [a.road, a.house_number].filter(Boolean).join(', ');
-        const area = a.suburb ?? a.neighbourhood ?? a.city_district;
-        const city = a.city ?? a.town ?? a.village ?? a.municipality;
-        address = [street, area, city && a.state_code ? `${city} - ${a.state_code}` : city].filter(Boolean).join(' · ') || j.display_name || null;
-      }
+      if (!res.ok) return null; // 429/5xx são transitórios: não guarda em cache
+      const j = await res.json();
+      const a = j.address ?? {};
+      const street = [a.road, a.house_number].filter(Boolean).join(', ');
+      const area = a.suburb ?? a.neighbourhood ?? a.city_district;
+      const city = a.city ?? a.town ?? a.village ?? a.municipality;
+      address = [street, area, city && a.state_code ? `${city} - ${a.state_code}` : city].filter(Boolean).join(' · ') || j.display_name || null;
     } catch {
       return null; // não guarda falhas em cache
     }
