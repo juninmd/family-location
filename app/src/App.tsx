@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Badge } from '@juninmd/sonido';
 import { startRealtime } from './lib/socket';
 import { getState, setTab, useStore, type Tab } from './lib/store';
 import { startTracking } from './lib/tracker';
@@ -38,13 +39,14 @@ export default function App() {
   const sosOpen = useStore((s) => s.sosOpen);
   const pick = useStore((s) => s.pickPlace);
   const selected = useStore((s) => s.selected);
-  const toast = useStore((s) => s.toast);
   const dark = useIsDark();
 
   useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0b1020' : '#f4f6ff');
-  }, [dark]);
+    // Onboarding is a dark-only surface; once inside the app the theme follows the preference.
+    const resolved = creds ? (dark ? 'dark' : 'light') : 'dark';
+    document.documentElement.dataset.theme = resolved;
+    document.querySelector('meta[name=theme-color]')?.setAttribute('content', resolved === 'dark' ? '#0b1020' : '#f4f6ff');
+  }, [dark, creds]);
 
   useEffect(() => {
     const c = getState().creds;
@@ -74,7 +76,11 @@ export default function App() {
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
             <span className="nav-ico">
               {t.icon}
-              {t.id === 'activity' && unread > 0 && <i className="badge">{unread > 9 ? '9+' : unread}</i>}
+              {t.id === 'activity' && unread > 0 && (
+                <Badge tone="danger" appearance="solid" className="nav-badge">
+                  {unread > 9 ? '9+' : unread}
+                </Badge>
+              )}
             </span>
             <small>{t.label}</small>
           </button>
@@ -83,7 +89,6 @@ export default function App() {
 
       {addOpen && <AddPerson />}
       {sosOpen && <SosModal />}
-      {toast && <div key={toast.id} className={`toast ${toast.kind}`}>{toast.text}</div>}
     </div>
   );
 }

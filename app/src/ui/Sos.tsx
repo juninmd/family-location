@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from '@juninmd/sonido';
 import { api } from '../lib/api';
 import { haptic } from '../lib/native';
 import { getState, setState, toast, useStore } from '../lib/store';
@@ -48,14 +49,14 @@ export function SosModal() {
             ? `Avisamos ${watchers} ${watchers === 1 ? 'pessoa' : 'pessoas'} que acompanham você, com a sua localização exata.`
             : 'Ninguém acompanha você ainda. Em emergência, ligue 190 (Polícia), 192 (SAMU) ou 193 (Bombeiros).'}
         </p>
-        <button className="btn danger lg pulse" onClick={sos} disabled={busy}>🚨 Enviar alerta SOS</button>
-        <button className="btn soft lg" onClick={() => checkin()} disabled={busy}>✅ Só avisar que estou bem</button>
+        <Button variant="danger" size="lg" className="pulse" onClick={sos} loading={busy}>🚨 Enviar alerta SOS</Button>
+        <Button variant="secondary" size="lg" onClick={() => checkin()} disabled={busy}>✅ Só avisar que estou bem</Button>
         <div className="chips wrap">
           {QUICK.map((q) => (
-            <button key={q} className="chip-btn" disabled={busy} onClick={() => checkin(q)}>{q}</button>
+            <Button key={q} variant="secondary" size="sm" disabled={busy} onClick={() => checkin(q)}>{q}</Button>
           ))}
         </div>
-        <button className="btn ghost" onClick={close}>Cancelar</button>
+        <Button variant="ghost" onClick={close}>Cancelar</Button>
       </div>
     </Modal>
   );

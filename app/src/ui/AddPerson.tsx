@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Button, Tabs, TextField } from '@juninmd/sonido';
 import { api } from '../lib/api';
 import { copyText, haptic, shareText } from '../lib/native';
 import { select, setState, toast, upsertPerson, useStore } from '../lib/store';
@@ -26,7 +27,7 @@ export function AddPerson() {
   const [scan, setScan] = useState(false);
   const [mode, setMode] = useState<'code' | 'wifi'>('code');
   const [showQr, setShowQr] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLDivElement>(null);
   const close = () => setState({ addOpen: false });
   const ready = code.replace('-', '').length === 8;
 
@@ -54,16 +55,22 @@ export function AddPerson() {
 
   return (
     <Modal title="Adicionar pessoa" onClose={close}>
-      <div className="seg wide tabs">
-        <button className={mode === 'code' ? 'on' : ''} onClick={() => setMode('code')}>🔢 Código</button>
-        <button className={mode === 'wifi' ? 'on' : ''} onClick={() => setMode('wifi')}>📡 Wi‑Fi próximo</button>
-      </div>
+      <Tabs
+        items={[
+          { key: 'code', label: '🔢 Código' },
+          { key: 'wifi', label: '📡 Wi‑Fi próximo' },
+        ]}
+        value={mode}
+        onChange={setMode}
+        label="Como adicionar"
+        variant="pill"
+        className="add-tabs"
+      />
       {mode === 'wifi' && <Nearby onDone={close} />}
       <div className="modal-body" hidden={mode !== 'code'}>
-        <label className="field">
-          <span>Código de quem você quer acompanhar</span>
-          <input
-            ref={input}
+        <div ref={input}>
+          <TextField
+            label="Código de quem você quer acompanhar"
             className="code-input"
             value={code}
             inputMode="text"
@@ -72,26 +79,37 @@ export function AddPerson() {
             autoCorrect="off"
             spellCheck={false}
             placeholder="XXXX-XXXX"
+            error={err || undefined}
             onChange={(e) => (setCode(fmt(e.target.value)), setErr(''))}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
-        </label>
-        <label className="field">
-          <span>Apelido (opcional)</span>
-          <input value={alias} maxLength={24} placeholder="Ex.: Amor, Mãe, Pedrinho" onChange={(e) => setAlias(e.target.value)} />
-        </label>
-        {err && <p className="err">{err}</p>}
-        <button className="btn primary lg" onClick={submit} disabled={!ready || busy}>{busy ? 'Procurando…' : 'Acompanhar no mapa'}</button>
-        <button className="btn soft" onClick={() => setScan(true)}>📷 Escanear QR Code</button>
+        </div>
+        <TextField
+          label="Apelido (opcional)"
+          value={alias}
+          maxLength={24}
+          placeholder="Ex.: Amor, Mãe, Pedrinho"
+          onChange={(e) => setAlias(e.target.value)}
+        />
+        <Button variant="primary" size="lg" onClick={submit} disabled={!ready} loading={busy}>
+          {busy ? 'Procurando…' : 'Acompanhar no mapa'}
+        </Button>
+        <Button variant="secondary" onClick={() => setScan(true)}>
+          📷 Escanear QR Code
+        </Button>
 
         <div className="divider"><span>ou deixe que vejam você</span></div>
         <div className="mycode">
           <small>Seu código</small>
           <b>{me?.code ?? '…'}</b>
           <div className="row gap center">
-            <button className="btn soft" onClick={async () => me && toast((await copyText(me.code)) ? 'Código copiado' : 'Não foi possível copiar', 'ok')}><ICopy width={18} height={18} /> Copiar</button>
-            <button className="btn soft" onClick={() => me && shareInvite(me.code, me.name)}><IShare width={18} height={18} /> Enviar</button>
-            <button className="btn soft" onClick={() => setShowQr((v) => !v)}>QR</button>
+            <Button variant="secondary" size="sm" onClick={async () => me && toast((await copyText(me.code)) ? 'Código copiado' : 'Não foi possível copiar', 'ok')}>
+              <ICopy width={18} height={18} /> Copiar
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => me && shareInvite(me.code, me.name)}>
+              <IShare width={18} height={18} /> Enviar
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowQr((v) => !v)}>QR</Button>
           </div>
           {showQr && me && <div className="qr-wrap"><QrCode text={qrPayload(me.code)} size={190} /></div>}
         </div>

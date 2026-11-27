@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Card, FilterChips, StatTile, Tabs, TextField } from '@juninmd/sonido';
 import { api } from '../lib/api';
 import type { Report } from '../lib/types';
 import { batteryPct, ago, clock, compass, coords, dist, dms, haversine, kmh, statusOf } from '../lib/format';
@@ -12,25 +13,32 @@ import { Modal } from './Modal';
 
 const NONE: never[] = [];
 
+const activate = (fn: () => void) => (e: React.KeyboardEvent) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fn();
+  }
+};
+
 export function MapHeader() {
   const conn = useStore((s) => s.conn);
   const people = useStore((s) => s.me?.following ?? NONE);
   const live = people.filter((p) => p.pos && p.sharing && Date.now() - p.pos.ts < 180_000).length;
+  const tone = conn === 'online' ? 'success' : conn === 'connecting' ? 'warning' : 'danger';
   return (
     <header className="map-head">
       <div className="brand-pill">
         <img src="/icon.svg" alt="" />
         <div>
           <b>Perto</b>
-          <small className={`conn ${conn}`}>
-            <i />
+          <Badge tone={tone} dot live={conn === 'online'} appearance="soft" className="conn-badge">
             {conn === 'online' ? (people.length ? `${live} de ${people.length} ao vivo` : 'conectado') : conn === 'connecting' ? 'conectando…' : 'sem conexão'}
-          </small>
+          </Badge>
         </div>
       </div>
-      <button className="icon-btn danger" onClick={() => setState({ sosOpen: true })} aria-label="SOS">
+      <Button variant="danger" size="icon" onClick={() => setState({ sosOpen: true })} aria-label="SOS">
         <ISos />
-      </button>
+      </Button>
     </header>
   );
 }
@@ -40,14 +48,16 @@ export function MapButtons() {
   const tracking = useStore((s) => s.tracking);
   return (
     <div className="map-btns">
-      <button className="icon-btn glass" onClick={() => mapApi.fitAll()} aria-label="Ver todos"><IFit /></button>
-      <button
-        className="icon-btn glass"
+      <Button variant="secondary" size="icon" className="icon-glass" onClick={() => mapApi.fitAll()} aria-label="Ver todos"><IFit /></Button>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="icon-glass"
         aria-label="Minha localização"
-        onClick={() => (myPos ? flyTo(myPos.lat, myPos.lng, 16) : toast(tracking === 'denied' ? 'Permita a localização nas configurações.' : 'Obtendo sua posição…', 'err'))}
+        onClick={() => (myPos ? flyTo(myPos.lat, myPos.lng, 16) : toast(tracking === 'denied' ? 'Permita a localização nas configurações.' : 'Obtendo sua posição.', 'err'))}
       >
         <ILocate />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -63,22 +73,33 @@ export function PeopleDock() {
   return (
     <div className="dock">
       {groups.length > 0 && (
-        <div className="chips group-chips">
-          <button className={`chip-btn${!group ? ' on' : ''}`} onClick={() => setState({ group: null })}>Todos</button>
-          {groups.map((g) => (
-            <button key={g} className={`chip-btn${group === g ? ' on' : ''}`} onClick={() => setState({ group: g })}>{g}</button>
-          ))}
-        </div>
+        <FilterChips
+          label="Grupos"
+          allLabel="Todos"
+          chips={groups.map((g) => ({ key: g, label: g }))}
+          value={group && groups.includes(group) ? group : null}
+          onChange={(g) => setState({ group: g })}
+          className="group-chips"
+        />
       )}
       <div className="dock-scroll">
         {shown.map((p) => (
           <PersonCard key={p.code} p={p} />
         ))}
-        <button className="card add-card" onClick={() => setState({ addOpen: true })}>
+        <Card
+          surface="glass"
+          padding="sm"
+          interactive
+          className="card add-card"
+          role="button"
+          tabIndex={0}
+          onClick={() => setState({ addOpen: true })}
+          onKeyDown={activate(() => setState({ addOpen: true }))}
+        >
           <span className="add-ico"><IPlus /></span>
           <b>{people.length ? 'Adicionar' : 'Adicionar pessoa'}</b>
           <small>Digite o código</small>
-        </button>
+        </Card>
       </div>
       {!people.length && (
         <p className="dock-empty">Peça o código ao seu familiar (Perfil → Seu código) e toque em <b>Adicionar</b>.</p>
@@ -92,15 +113,25 @@ function PersonCard({ p }: { p: Person }) {
   const myPos = useStore((s) => s.myPos);
   const d = p.pos && myPos ? dist(haversine(myPos, p.pos)) : null;
   return (
-    <button className="card person-card" onClick={() => (void haptic('light'), select(p.code))} style={{ '--c': p.color } as React.CSSProperties}>
+    <Card
+      surface="glass"
+      padding="sm"
+      interactive
+      className="card person-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => (void haptic('light'), select(p.code))}
+      onKeyDown={activate(() => (void haptic('light'), select(p.code)))}
+      style={{ '--c': p.color } as React.CSSProperties}
+    >
       <div className="pc-top">
-        <Avatar emoji={p.emoji} color={p.color} size={42} dot={st.tone === 'move' ? 'move' : st.tone === 'live' ? 'live' : 'off'} />
+        <Avatar emoji={p.emoji} color={p.color} name={p.name} size={42} dot={st.tone === 'move' ? 'move' : st.tone === 'live' ? 'live' : 'off'} />
         <BatteryChip level={p.pos?.battery ?? null} charging={!!p.pos?.charging} />
       </div>
       <b>{p.name}</b>
       <small className={`st ${st.tone}`}>{p.pending ? 'Aguardando aprovação' : (st.short ?? st.label)}</small>
       {p.expiresAt ? <small className="dim">⏳ até {new Date(p.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</small> : d && <small className="dim">a {d} de você</small>}
-    </button>
+    </Card>
   );
 }
 
@@ -199,26 +230,26 @@ function PersonSheet({ person: p }: { person: Person }) {
     const bat = batteryPct(pos.battery);
     return [
       { icon: <ISpeed />, label: 'Velocidade', value: v == null ? '—' : `${Math.round(v)} km/h` },
-      { icon: <IBattery />, label: 'Bateria', value: bat == null ? '—' : `${bat}%${pos.charging ? ' ⚡' : ''}`, tone: bat != null && bat <= 20 && !pos.charging ? 'bad' : '' },
+      { icon: <IBattery />, label: 'Bateria', value: bat == null ? '—' : `${bat}%${pos.charging ? ' ⚡' : ''}`, tone: bat != null && bat <= 20 && !pos.charging ? 'danger' : 'neutral' },
       { icon: <ITarget />, label: 'Precisão GPS', value: pos.acc == null ? '—' : `±${Math.round(pos.acc)} m` },
       { icon: <IMountain />, label: 'Altitude', value: pos.alt == null ? '—' : `${Math.round(pos.alt)} m` },
       { icon: <ICompass />, label: 'Direção', value: pos.heading == null || (v ?? 0) < 1 ? '—' : `${compass(pos.heading)} ${Math.round(pos.heading)}°` },
       { icon: <IClock />, label: 'Atualizado', value: `${clock(pos.ts)} · ${ago(pos.ts, now)}` },
-    ];
+    ] as { icon: React.ReactNode; label: string; value: string; tone?: 'danger' | 'neutral' }[];
   }, [pos, now]);
 
   return (
     <div className="sheet" style={{ '--c': p.color } as React.CSSProperties}>
       <div className="sheet-grab" onClick={() => select(null)} />
       <div className="sheet-head">
-        <Avatar emoji={p.emoji} color={p.color} size={54} ring dot={st.tone === 'move' ? 'move' : st.tone === 'live' ? 'live' : 'off'} />
+        <Avatar emoji={p.emoji} color={p.color} name={p.name} size={54} ring dot={st.tone === 'move' ? 'move' : st.tone === 'live' ? 'live' : 'off'} />
         <div className="sheet-title">
           <h2>{p.name}</h2>
           <small className={`st ${st.tone}`}>{st.short ?? st.label}</small>
         </div>
-        <button className="icon-btn sm" onClick={() => setRenaming(true)} aria-label="Ajustes da pessoa"><IEdit width={17} height={17} /></button>
-        <button className="icon-btn sm danger-text" onClick={() => setRemoving(true)} aria-label="Remover"><ITrash width={17} height={17} /></button>
-        <button className="icon-btn sm" onClick={() => select(null)} aria-label="Fechar">✕</button>
+        <Button variant="secondary" size="icon" className="icon-sm" onClick={() => setRenaming(true)} aria-label="Ajustes da pessoa"><IEdit width={17} height={17} /></Button>
+        <Button variant="ghost" size="icon" className="icon-sm danger-text" onClick={() => setRemoving(true)} aria-label="Remover"><ITrash width={17} height={17} /></Button>
+        <Button variant="secondary" size="icon" className="icon-sm" onClick={() => select(null)} aria-label="Fechar">✕</Button>
       </div>
 
       {p.pending ? (
@@ -227,22 +258,18 @@ function PersonSheet({ person: p }: { person: Person }) {
         <>
           <div className="stats">
             {stats.map((s) => (
-              <div key={s.label} className={`stat ${s.tone ?? ''}`}>
-                <span className="stat-ico">{s.icon}</span>
-                <small>{s.label}</small>
-                <b>{s.value}</b>
-              </div>
+              <StatTile key={s.label} icon={s.icon} label={s.label} value={s.value} tone={s.tone ?? 'neutral'} />
             ))}
           </div>
 
-          <button className="coords" onClick={async () => toast((await copyText(coords(pos, 6))) ? 'Coordenadas copiadas' : 'Falha ao copiar')}>
+          <Button variant="secondary" className="coords" onClick={async () => toast((await copyText(coords(pos, 6))) ? 'Coordenadas copiadas' : 'Falha ao copiar')}>
             <div>
               <small>Coordenadas GPS</small>
               <b>{coords(pos, 6)}</b>
               <em>{dms(pos.lat, 'N', 'S')} · {dms(pos.lng, 'L', 'O')}</em>
             </div>
             <ICopy width={18} height={18} />
-          </button>
+          </Button>
 
           <p className="address">
             📍 {address ?? 'Buscando endereço…'}
@@ -251,19 +278,25 @@ function PersonSheet({ person: p }: { person: Person }) {
 
           <div className="seg-row">
             <span>Trajeto</span>
-            <div className="seg">
-              {[1, 6, 24].map((h) => (
-                <button key={h} className={trailHours === h ? 'on' : ''} onClick={() => loadTrail(h)}>{h} h</button>
-              ))}
-              <button className={trailHours == null ? 'on' : ''} onClick={() => setState({ trailHours: null })}>Off</button>
-            </div>
+            <Tabs
+              items={[
+                { key: '1', label: '1 h' },
+                { key: '6', label: '6 h' },
+                { key: '24', label: '24 h' },
+                { key: 'off', label: 'Off' },
+              ]}
+              value={trailHours == null ? 'off' : String(trailHours)}
+              onChange={(v) => loadTrail(v === 'off' ? null : Number(v))}
+              label="Período do trajeto"
+              variant="pill"
+            />
           </div>
 
           {trail && trail.length > 1 && trailHours != null && (
             <div className="replay">
-              <button className="icon-btn sm" onClick={toggleReplay} aria-label="Reproduzir trajeto">
+              <Button variant="secondary" size="icon" className="icon-sm" onClick={toggleReplay} aria-label="Reproduzir trajeto">
                 {replay?.code === p.code && replay.playing ? '⏸' : <IPlay width={16} height={16} />}
-              </button>
+              </Button>
               <input
                 type="range" min={0} max={trail.length - 1}
                 value={replay?.code === p.code ? replay.idx : trail.length - 1}
@@ -273,9 +306,9 @@ function PersonSheet({ person: p }: { person: Person }) {
             </div>
           )}
 
-          <button className="report-toggle" onClick={toggleReport}>
+          <Button variant="secondary" className="report-toggle" onClick={toggleReport}>
             <span>📊 Resumo das últimas 24 h</span><span>{reportOpen ? '▴' : '▾'}</span>
-          </button>
+          </Button>
           {reportOpen && (
             <div className="report">
               {!report ? <small>Calculando…</small> : report.points < 2 ? <small>Ainda sem dados suficientes.</small> : (
@@ -292,14 +325,15 @@ function PersonSheet({ person: p }: { person: Person }) {
           )}
 
           <div className="actions">
-            <button className="btn soft" onClick={() => openRoute(p)}><IRoute width={18} height={18} /> Rota até aqui</button>
-            <button
-              className="btn soft"
+            <Button variant="secondary" className="action-btn" onClick={() => openRoute(p)}><IRoute width={18} height={18} /> Rota até aqui</Button>
+            <Button
+              variant="secondary"
+              className="action-btn"
               onClick={() => shareText(`Localização de ${p.name}`, `${p.name} está aqui: https://www.google.com/maps?q=${pos.lat},${pos.lng}`)}
             >
               <IShare width={18} height={18} /> Enviar
-            </button>
-            <button className="btn soft" onClick={() => flyTo(pos.lat, pos.lng, 17)}><INav width={18} height={18} /> Centralizar</button>
+            </Button>
+            <Button variant="secondary" className="action-btn" onClick={() => flyTo(pos.lat, pos.lng, 17)}><INav width={18} height={18} /> Centralizar</Button>
           </div>
         </>
       ) : (
@@ -313,8 +347,9 @@ function PersonSheet({ person: p }: { person: Person }) {
         <Modal title={`Parar de acompanhar ${p.name}?`} onClose={() => setRemoving(false)}>
           <div className="modal-body">
             <p className="lead sm">Você deixa de ver essa pessoa. Para ver de novo, vai precisar do código dela.</p>
-            <button
-              className="btn danger lg"
+            <Button
+              variant="danger"
+              size="lg"
               onClick={async () => {
                 try {
                   await api.unfollow(p.code);
@@ -328,8 +363,8 @@ function PersonSheet({ person: p }: { person: Person }) {
               }}
             >
               Remover
-            </button>
-            <button className="btn ghost" onClick={() => setRemoving(false)}>Cancelar</button>
+            </Button>
+            <Button variant="ghost" onClick={() => setRemoving(false)}>Cancelar</Button>
           </div>
         </Modal>
       )}
@@ -337,7 +372,7 @@ function PersonSheet({ person: p }: { person: Person }) {
   );
 }
 
-const LIMITS = [null, 60, 80, 100, 120] as const;
+const LIMITS: (number | null)[] = [null, 60, 80, 100, 120];
 
 function PersonSettings({ person, onClose }: { person: Person; onClose: () => void }) {
   const people = useStore((s) => s.me?.following ?? NONE);
@@ -365,29 +400,36 @@ function PersonSettings({ person, onClose }: { person: Person; onClose: () => vo
   return (
     <Modal title="Ajustes" onClose={onClose}>
       <div className="modal-body">
-        <label className="field">
-          <span>Apelido para {person.realName}</span>
-          <input value={alias} maxLength={24} onChange={(e) => setAlias(e.target.value)} />
-        </label>
-        <div className="field">
-          <span>Grupo</span>
-          <div className="chips wrap">
-            <button className={`chip-btn${!group ? ' on' : ''}`} onClick={() => setGroup('')}>Nenhum</button>
-            {groups.map((g) => (
-              <button key={g} className={`chip-btn${group === g ? ' on' : ''}`} onClick={() => setGroup(g)}>{g}</button>
-            ))}
-          </div>
-          <input value={group} maxLength={20} placeholder="Ou crie um grupo (ex.: Amigos)" onChange={(e) => setGroup(e.target.value)} />
+        <TextField
+          label={`Apelido para ${person.realName}`}
+          value={alias}
+          maxLength={24}
+          onChange={(e) => setAlias(e.target.value)}
+        />
+        <div className="field-group">
+          <FilterChips
+            label="Grupo"
+            chips={groups.map((g) => ({ key: g, label: g }))}
+            value={group || null}
+            onChange={(g) => setGroup(g ?? '')}
+          />
+          <TextField
+            label="Grupo"
+            hideLabel
+            value={group}
+            maxLength={20}
+            placeholder="Ou crie um grupo (ex.: Amigos)"
+            onChange={(e) => setGroup(e.target.value)}
+          />
         </div>
-        <div className="field">
-          <span>Avisar se passar de…</span>
-          <div className="chips wrap">
-            {LIMITS.map((l) => (
-              <button key={String(l)} className={`chip-btn${limit === l ? ' on' : ''}`} onClick={() => setLimit(l)}>{l ? `${l} km/h` : 'Desligado'}</button>
-            ))}
-          </div>
-        </div>
-        <button className="btn primary lg" onClick={save}>Salvar</button>
+        <FilterChips
+          label="Avisar se passar de"
+          allLabel="Desligado"
+          chips={LIMITS.filter((l): l is number => l != null).map((l) => ({ key: String(l), label: `${l} km/h` }))}
+          value={limit == null ? null : String(limit)}
+          onChange={(v) => setLimit(v == null ? null : Number(v))}
+        />
+        <Button variant="primary" size="lg" onClick={save}>Salvar</Button>
       </div>
     </Modal>
   );
@@ -433,24 +475,32 @@ export function PlaceComposer() {
           <h2>Novo lugar</h2>
           <small>Mova o mapa até o ponto desejado</small>
         </div>
-        <button className="icon-btn sm" onClick={cancel} aria-label="Cancelar">✕</button>
+        <Button variant="secondary" size="icon" className="icon-sm" onClick={cancel} aria-label="Cancelar">✕</Button>
       </div>
-      <div className="chips">
-        {PRESETS.map((p) => (
-          <button key={p.name} className={`chip-btn${pick.name === p.name ? ' on' : ''}`} onClick={() => patch({ ...p })}>{p.emoji} {p.name}</button>
-        ))}
-      </div>
-      <label className="field inline">
-        <span>{pick.emoji}</span>
-        <input value={pick.name} maxLength={24} placeholder="Nome do lugar" onChange={(e) => patch({ name: e.target.value })} />
-      </label>
+      <FilterChips
+        label="Sugestões de lugar"
+        chips={PRESETS.map((p) => ({ key: p.name, label: `${p.emoji} ${p.name}` }))}
+        value={PRESETS.some((p) => p.name === pick.name) ? pick.name : null}
+        onChange={(name) => {
+          const preset = PRESETS.find((p) => p.name === name);
+          if (preset) patch({ ...preset });
+        }}
+      />
+      <TextField
+        label="Nome do lugar"
+        icon={<span>{pick.emoji}</span>}
+        value={pick.name}
+        maxLength={24}
+        placeholder="Nome do lugar"
+        onChange={(e) => patch({ name: e.target.value })}
+      />
       <label className="range">
         <span>Raio <b>{pick.radius} m</b></span>
         <input type="range" min={50} max={1000} step={25} value={pick.radius} onChange={(e) => patch({ radius: +e.target.value })} />
       </label>
       <div className="row gap">
-        <button className="btn ghost" onClick={cancel}>Cancelar</button>
-        <button className="btn primary grow" onClick={save} disabled={busy}>Salvar lugar aqui</button>
+        <Button variant="ghost" onClick={cancel}>Cancelar</Button>
+        <Button variant="primary" className="grow" onClick={save} loading={busy}>Salvar lugar aqui</Button>
       </div>
     </div>
   );
