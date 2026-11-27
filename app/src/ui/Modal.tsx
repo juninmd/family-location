@@ -1,26 +1,19 @@
-import { useEffect, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { IClose } from './Icons';
+import type { ReactNode } from 'react';
+import { Dialog } from '@juninmd/sonido';
 
+/**
+ * Adapter over Sonido's Dialog so screens keep their existing `Modal` call sites.
+ * Sonido owns focus trapping, Esc/backdrop close, the accessible heading and the close button.
+ */
 export function Modal({ title, onClose, children, tone }: { title?: string; onClose: () => void; children: ReactNode; tone?: 'danger' }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
-  return createPortal(
-    <div className="modal-back" onClick={onClose}>
-      <div className={`modal ${tone ?? ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal>
-        <div className="grab" />
-        {title && (
-          <header className="modal-head">
-            <h3>{title}</h3>
-            <button className="icon-btn sm" onClick={onClose} aria-label="Fechar"><IClose width={18} height={18} /></button>
-          </header>
-        )}
-        {children}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={title ?? 'Perto'}
+      className={tone === 'danger' ? 'app-dialog-danger' : undefined}
+    >
+      {children}
+    </Dialog>
   );
 }

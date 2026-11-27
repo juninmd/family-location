@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button, TextField } from '@juninmd/sonido';
 import { api } from '../lib/api';
 import { haptic, kv } from '../lib/native';
 import { startRealtime } from '../lib/socket';
@@ -66,7 +67,7 @@ export function Onboarding() {
             <li><span><IShield /></span><div><b>Sem cadastro</b><small>Nada de e-mail ou senha. Só um código de pareamento.</small></div></li>
             <li><span><IEye /></span><div><b>Você no controle</b><small>Pause quando quiser e veja quem acompanha você.</small></div></li>
           </ul>
-          <button className="btn primary lg" onClick={() => setStep(1)}>Começar</button>
+          <Button variant="primary" size="lg" onClick={() => setStep(1)}>Começar</Button>
         </div>
       )}
 
@@ -74,10 +75,14 @@ export function Onboarding() {
         <div className="onb-card fade-up">
           <h2>Como a família vai te ver?</h2>
           <div className="onb-avatar"><Avatar emoji={emoji} color={color} size={96} ring /></div>
-          <label className="field">
-            <span>Seu nome</span>
-            <input value={name} maxLength={24} placeholder="Ex.: Junin" onChange={(e) => setName(e.target.value)} autoFocus />
-          </label>
+          <TextField
+            label="Seu nome"
+            value={name}
+            maxLength={24}
+            placeholder="Ex.: Junin"
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
           <div className="pick-row">
             {EMOJIS.map((e) => (
               <button key={e} className={`pick${e === emoji ? ' on' : ''}`} onClick={() => setEmoji(e)} aria-label={e}>{e}</button>
@@ -91,8 +96,8 @@ export function Onboarding() {
             ))}
           </div>
           <div className="row gap">
-            <button className="btn ghost" onClick={() => setStep(0)}>Voltar</button>
-            <button className="btn primary grow" onClick={() => setStep(2)} disabled={!name.trim()}>Continuar</button>
+            <Button variant="ghost" onClick={() => setStep(0)}>Voltar</Button>
+            <Button variant="primary" className="grow" onClick={() => setStep(2)} disabled={!name.trim()}>Continuar</Button>
           </div>
         </div>
       )}
@@ -111,8 +116,10 @@ export function Onboarding() {
           </ul>
           {err && <p className="err" role="alert">{err}</p>}
           <div className="row gap">
-            <button className="btn ghost" onClick={() => setStep(1)}>Voltar</button>
-            <button className="btn primary grow" onClick={finish} disabled={busy}>{busy ? 'Criando…' : err ? 'Tentar de novo' : 'Permitir e criar meu código'}</button>
+            <Button variant="ghost" onClick={() => setStep(1)}>Voltar</Button>
+            <Button variant="primary" className="grow" onClick={finish} loading={busy}>
+              {busy ? 'Criando…' : err ? 'Tentar de novo' : 'Permitir e criar meu código'}
+            </Button>
           </div>
         </div>
       )}

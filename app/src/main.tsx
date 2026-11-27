@@ -1,12 +1,18 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ToastProvider } from '@juninmd/sonido';
 import App from './App';
+import '@juninmd/sonido/styles.css';
 import './styles.css';
 import { isNative } from './lib/native';
+import { Toaster } from './ui/Toaster';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+      <Toaster />
+    </ToastProvider>
   </StrictMode>,
 );
 
